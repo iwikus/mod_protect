@@ -128,6 +128,7 @@ int protect_rate_check(request_rec *r, const protect_rate_config *cfg,
     const char *key;
     apr_status_t rv;
     int dynamic;
+    int dynamic_limit_enabled;
 
     if (!r || !cfg || !limited || !reason || !count || !limit ||
         !protect_rate_data ||
@@ -142,6 +143,8 @@ int protect_rate_check(request_rec *r, const protect_rate_config *cfg,
     *limit = 0;
 
     dynamic = protect_rate_dynamic(r);
+    dynamic_limit_enabled = cfg->uri_dynamic_count > 0 &&
+                            cfg->uri_dynamic_interval > 0;
 
     if (!cfg->uri_count && !cfg->uri_dynamic_count && !cfg->site_count) {
         return DECLINED;
@@ -167,7 +170,8 @@ int protect_rate_check(request_rec *r, const protect_rate_config *cfg,
         }
     }
 
-    if (!*limited && cfg->uri_count && cfg->uri_interval > 0 && !dynamic) {
+    if (!*limited && cfg->uri_count && cfg->uri_interval > 0 &&
+        (!dynamic || !dynamic_limit_enabled)) {
         key = protect_rate_key_uri(r, r->pool);
         if (protect_rate_hit(protect_rate_data->uri,
                              protect_rate_hash(key),
@@ -180,8 +184,7 @@ int protect_rate_check(request_rec *r, const protect_rate_config *cfg,
         }
     }
 
-    if (!*limited && cfg->uri_dynamic_count &&
-        cfg->uri_dynamic_interval > 0 && dynamic) {
+    if (!*limited && dynamic_limit_enabled && dynamic) {
         key = protect_rate_key_uri(r, r->pool);
         key = apr_pstrcat(r->pool, "D|", key, NULL);
         if (protect_rate_hit(protect_rate_data->uri_dynamic,
