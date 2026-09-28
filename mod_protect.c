@@ -20,7 +20,15 @@ module AP_MODULE_DECLARE_DATA protect_module;
 typedef struct {
     long max_concurrent_ip;
     long max_concurrent_vhost;
+    int max_concurrent_ip_set;
+    int max_concurrent_vhost_set;
     protect_rate_config rate;
+    int uri_count_set;
+    int uri_interval_set;
+    int uri_dynamic_count_set;
+    int uri_dynamic_interval_set;
+    int site_count_set;
+    int site_interval_set;
     const char *protect_log;
     apr_os_file_t protect_log_fd;
 } protect_config;
@@ -48,9 +56,36 @@ static void *protect_merge_server_config(apr_pool_t *p, void *basev, void *overv
     protect_config *over = (protect_config *)overv;
     protect_config *cfg = apr_pcalloc(p, sizeof(*cfg));
 
-    cfg->max_concurrent_ip = over->max_concurrent_ip;
-    cfg->max_concurrent_vhost = over->max_concurrent_vhost;
-    cfg->rate = over->rate;
+    cfg->max_concurrent_ip = over->max_concurrent_ip_set ?
+        over->max_concurrent_ip : base->max_concurrent_ip;
+    cfg->max_concurrent_vhost = over->max_concurrent_vhost_set ?
+        over->max_concurrent_vhost : base->max_concurrent_vhost;
+
+    cfg->rate.uri_count = over->uri_count_set ?
+        over->rate.uri_count : base->rate.uri_count;
+    cfg->rate.uri_interval = over->uri_interval_set ?
+        over->rate.uri_interval : base->rate.uri_interval;
+    cfg->rate.uri_dynamic_count = over->uri_dynamic_count_set ?
+        over->rate.uri_dynamic_count : base->rate.uri_dynamic_count;
+    cfg->rate.uri_dynamic_interval = over->uri_dynamic_interval_set ?
+        over->rate.uri_dynamic_interval : base->rate.uri_dynamic_interval;
+    cfg->rate.site_count = over->site_count_set ?
+        over->rate.site_count : base->rate.site_count;
+    cfg->rate.site_interval = over->site_interval_set ?
+        over->rate.site_interval : base->rate.site_interval;
+
+    cfg->max_concurrent_ip_set =
+        over->max_concurrent_ip_set || base->max_concurrent_ip_set;
+    cfg->max_concurrent_vhost_set =
+        over->max_concurrent_vhost_set || base->max_concurrent_vhost_set;
+    cfg->uri_count_set = over->uri_count_set || base->uri_count_set;
+    cfg->uri_interval_set = over->uri_interval_set || base->uri_interval_set;
+    cfg->uri_dynamic_count_set =
+        over->uri_dynamic_count_set || base->uri_dynamic_count_set;
+    cfg->uri_dynamic_interval_set =
+        over->uri_dynamic_interval_set || base->uri_dynamic_interval_set;
+    cfg->site_count_set = over->site_count_set || base->site_count_set;
+    cfg->site_interval_set = over->site_interval_set || base->site_interval_set;
 
     cfg->protect_log = over->protect_log ?
         over->protect_log : base->protect_log;
@@ -77,9 +112,11 @@ static const char *protect_set_limit(cmd_parms *cmd, void *dummy,
 
     if (!strcmp(cmd->cmd->name, "ProtectMaxConcurrentPerIP")) {
         cfg->max_concurrent_ip = value;
+        cfg->max_concurrent_ip_set = 1;
     }
     else if (!strcmp(cmd->cmd->name, "ProtectMaxConcurrentPerVHost")) {
         cfg->max_concurrent_vhost = value;
+        cfg->max_concurrent_vhost_set = 1;
     }
 
     return NULL;
@@ -102,16 +139,22 @@ static const char *protect_set_rate(cmd_parms *cmd, void *dummy,
 
     if (!strcmp(cmd->cmd->name, "ProtectURICount"))
         cfg->rate.uri_count = value;
+        cfg->uri_count_set = 1;
     else if (!strcmp(cmd->cmd->name, "ProtectURIInterval"))
         cfg->rate.uri_interval = value;
+        cfg->uri_interval_set = 1;
     else if (!strcmp(cmd->cmd->name, "ProtectURIDynamicCount"))
         cfg->rate.uri_dynamic_count = value;
+        cfg->uri_dynamic_count_set = 1;
     else if (!strcmp(cmd->cmd->name, "ProtectURIDynamicInterval"))
         cfg->rate.uri_dynamic_interval = value;
+        cfg->uri_dynamic_interval_set = 1;
     else if (!strcmp(cmd->cmd->name, "ProtectSiteCount"))
         cfg->rate.site_count = value;
+        cfg->site_count_set = 1;
     else if (!strcmp(cmd->cmd->name, "ProtectSiteInterval"))
         cfg->rate.site_interval = value;
+        cfg->site_interval_set = 1;
 
     return NULL;
 }
