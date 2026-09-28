@@ -210,19 +210,23 @@ jobs:
                   headers={"Host": "protect-test"},
                   connector=aiohttp.TCPConnector(limit=0),
               ) as session:
+                  first = asyncio.create_task(
+                      fire(session, start_event, results, 0)
+                  )
+                  await asyncio.sleep(0.2)
+
                   tasks = [
                       asyncio.create_task(
                           fire(session, start_event, results, i)
                       )
-                      for i in range(N)
+                      for i in range(1, N)
                   ]
-                  await asyncio.sleep(0.1)
                   start_event.set()
-                  await asyncio.gather(*tasks)
+                  await asyncio.gather(first, *tasks)
 
               print(f"global inheritance: results={results}")
-              assert results.count(429) > 0, results
-              assert results.count(200) > 0, results
+              assert results[0] == 200, results
+              assert results[1:].count(429) > 0, results
               assert all(r in (200, 429) for r in results), results
 
           asyncio.run(main())
