@@ -52,8 +52,7 @@ static int protect_rate_dynamic(request_rec *r)
     if (!strcmp(r->handler, "cgi-script") ||
         !strcmp(r->handler, "fcgid-script") ||
         !strcmp(r->handler, "proxy-server") ||
-        !strcmp(r->handler, "application/x-httpd-php") ||
-        !strcmp(r->handler, "application/x-httpd-php-source")) {
+        !strcmp(r->handler, "application/x-httpd-php")) {
         return 1;
     }
 
@@ -128,6 +127,7 @@ int protect_rate_check(request_rec *r, const protect_rate_config *cfg,
 {
     const char *key;
     apr_status_t rv;
+    int dynamic;
 
     if (!r || !cfg || !limited || !reason || !count || !limit ||
         !protect_rate_data ||
@@ -140,6 +140,8 @@ int protect_rate_check(request_rec *r, const protect_rate_config *cfg,
     *reason = NULL;
     *count = 0;
     *limit = 0;
+
+    dynamic = protect_rate_dynamic(r);
 
     if (!cfg->uri_count && !cfg->uri_dynamic_count && !cfg->site_count) {
         return DECLINED;
@@ -165,7 +167,7 @@ int protect_rate_check(request_rec *r, const protect_rate_config *cfg,
         }
     }
 
-    if (!*limited && cfg->uri_count && cfg->uri_interval > 0) {
+    if (!*limited && cfg->uri_count && cfg->uri_interval > 0 && !dynamic) {
         key = protect_rate_key_uri(r, r->pool);
         if (protect_rate_hit(protect_rate_data->uri,
                              protect_rate_hash(key),
@@ -179,7 +181,7 @@ int protect_rate_check(request_rec *r, const protect_rate_config *cfg,
     }
 
     if (!*limited && cfg->uri_dynamic_count &&
-        cfg->uri_dynamic_interval > 0 && protect_rate_dynamic(r)) {
+        cfg->uri_dynamic_interval > 0 && dynamic) {
         key = protect_rate_key_uri(r, r->pool);
         key = apr_pstrcat(r->pool, "D|", key, NULL);
         if (protect_rate_hit(protect_rate_data->uri_dynamic,
