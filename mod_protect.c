@@ -137,24 +137,30 @@ static const char *protect_set_rate(cmd_parms *cmd, void *dummy,
         return "mod_protect: rate value must be a non-negative integer";
     }
 
-    if (!strcmp(cmd->cmd->name, "ProtectURICount"))
+    if (!strcmp(cmd->cmd->name, "ProtectURICount")) {
         cfg->rate.uri_count = value;
         cfg->uri_count_set = 1;
-    else if (!strcmp(cmd->cmd->name, "ProtectURIInterval"))
+    }
+    else if (!strcmp(cmd->cmd->name, "ProtectURIInterval")) {
         cfg->rate.uri_interval = value;
         cfg->uri_interval_set = 1;
-    else if (!strcmp(cmd->cmd->name, "ProtectURIDynamicCount"))
+    }
+    else if (!strcmp(cmd->cmd->name, "ProtectURIDynamicCount")) {
         cfg->rate.uri_dynamic_count = value;
         cfg->uri_dynamic_count_set = 1;
-    else if (!strcmp(cmd->cmd->name, "ProtectURIDynamicInterval"))
+    }
+    else if (!strcmp(cmd->cmd->name, "ProtectURIDynamicInterval")) {
         cfg->rate.uri_dynamic_interval = value;
         cfg->uri_dynamic_interval_set = 1;
-    else if (!strcmp(cmd->cmd->name, "ProtectSiteCount"))
+    }
+    else if (!strcmp(cmd->cmd->name, "ProtectSiteCount")) {
         cfg->rate.site_count = value;
         cfg->site_count_set = 1;
-    else if (!strcmp(cmd->cmd->name, "ProtectSiteInterval"))
+    }
+    else if (!strcmp(cmd->cmd->name, "ProtectSiteInterval")) {
         cfg->rate.site_interval = value;
         cfg->site_interval_set = 1;
+    }
 
     return NULL;
 }
