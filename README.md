@@ -36,7 +36,7 @@ All limit directives take a non-negative integer. `0` (the default) disables the
 
 All directives are valid in server config and `<VirtualHost>` context only.
 
-**Inheritance:** limits are not inherited. A `<VirtualHost>` that sets none of the limit directives has no limits, even if they are set in the main server config. Set the limits in every virtual host that needs them. `ProtectLog` is inherited.
+**Inheritance:** limits configured in the main server context are inherited by virtual hosts. A directive explicitly set to `0` in a virtual host disables the inherited limit for that virtual host. `ProtectLog` is also inherited.
 
 ## Concurrent limits
 
@@ -93,9 +93,9 @@ ProtectURIDynamicCount number
 ProtectURIDynamicInterval seconds
 ```
 
-Like `ProtectURICount`, but counts only dynamic requests. Use it to set a stricter limit for expensive URIs while keeping a looser one for everything else. A dynamic request is counted in both `ProtectURICount` and `ProtectURIDynamicCount`; each has its own counter and limit.
+Like `ProtectURICount`, but counts only dynamic requests. Use it to set a stricter limit for expensive URIs while keeping a looser one for everything else. When the dynamic limit is configured, dynamic requests use `ProtectURIDynamicCount` instead of `ProtectURICount`; they do not consume the normal URI counter. If the dynamic limit is not configured, dynamic requests fall back to `ProtectURICount`.
 
-A request is dynamic if its handler is one of `cgi-script`, `fcgid-script`, `proxy-server`, `application/x-httpd-php`, `application/x-httpd-php-source`, or starts with `proxy:` (for example PHP-FPM through `SetHandler "proxy:unix:..."`). The URI and file extension are not checked.
+A request is dynamic if its handler is one of `cgi-script`, `fcgid-script`, `proxy-server`, `application/x-httpd-php`, or starts with `proxy:` (for example PHP-FPM through `SetHandler "proxy:unix:..."`). The URI and file extension are not checked.
 
 ## Logging
 
