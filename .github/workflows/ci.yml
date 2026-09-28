@@ -202,6 +202,14 @@ jobs:
               except Exception as exc:
                   results[idx] = f"ERR: {exc}"
 
+          async def first_request(session, results):
+              try:
+                  async with session.get(TARGET) as resp:
+                      results[0] = resp.status
+                      await resp.read()
+              except Exception as exc:
+                  results[0] = f"ERR: {exc}"
+
           async def main():
               start_event = asyncio.Event()
               results = [None] * N
@@ -211,7 +219,7 @@ jobs:
                   connector=aiohttp.TCPConnector(limit=0),
               ) as session:
                   first = asyncio.create_task(
-                      fire(session, start_event, results, 0)
+                      first_request(session, results)
                   )
                   await asyncio.sleep(0.2)
 
