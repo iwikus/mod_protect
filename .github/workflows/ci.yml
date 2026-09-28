@@ -75,6 +75,20 @@ jobs:
           </VirtualHost>
 
           <VirtualHost 127.0.0.1:8080>
+              ServerName protect-ip-off
+              DocumentRoot /var/www/protect-test
+              ProtectMaxConcurrentPerIP 0
+              ScriptAlias /cgi-bin/ /var/www/protect-test/cgi-bin/
+              <Directory /var/www/protect-test/cgi-bin>
+                  Options +ExecCGI
+                  Require all granted
+              </Directory>
+              <Directory /var/www/protect-test>
+                  Require all granted
+              </Directory>
+          </VirtualHost>
+
+          <VirtualHost 127.0.0.1:8080>
               ServerName protect-ip
               DocumentRoot /var/www/protect-test
               ProtectMaxConcurrentPerIP 1
@@ -210,6 +224,48 @@ jobs:
               assert results.count(429) > 0, results
               assert results.count(200) > 0, results
               assert all(r in (200, 429) for r in results), results
+
+          asyncio.run(main())
+          PY
+
+      - name: Test explicit zero disables inherited concurrent limit
+        run: |
+          python3 - <<'PY'
+          import asyncio
+          import aiohttp
+
+          TARGET = "http://127.0.0.1:8080/cgi-bin/slow.py"
+          N = 5
+
+          async def fire(session, start_event, results, idx):
+              await start_event.wait()
+              try:
+                  async with session.get(TARGET) as resp:
+                      results[idx] = resp.status
+                      await resp.read()
+              except Exception as exc:
+                  results[idx] = f"ERR: {exc}"
+
+          async def main():
+              start_event = asyncio.Event()
+              results = [None] * N
+
+              async with aiohttp.ClientSession(
+                  headers={"Host": "protect-ip-off"},
+                  connector=aiohttp.TCPConnector(limit=0),
+              ) as session:
+                  tasks = [
+                      asyncio.create_task(
+                          fire(session, start_event, results, i)
+                      )
+                      for i in range(N)
+                  ]
+                  await asyncio.sleep(0.1)
+                  start_event.set()
+                  await asyncio.gather(*tasks)
+
+              print(f"explicit zero: results={results}")
+              assert results == [200] * N, results
 
           asyncio.run(main())
           PY
