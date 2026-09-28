@@ -1,209 +1,183 @@
 # mod_protect
 
-Apache HTTP Server module for limiting concurrent requests and request rates by client IP, URI and virtual host.
+Apache HTTP Server 2.4 module that limits concurrent requests and request rates per client IP, URI and virtual host. A request over a limit is rejected with `429 Too Many Requests` (no response body is generated).
 
 ## Requirements
 
 - Apache HTTP Server 2.4
-- Apache scoreboard with `ExtendedStatus On` for concurrent request limits
-- APR shared memory and process-shared mutex support for rate limits
+- `mod_status` with `ExtendedStatus On` (needed for the concurrent limits)
+- APR shared memory and process-shared mutex support (needed for the rate limits)
 
-## Loading
+## Build and install
 
-```apache
+```
+apxs -c -I. mod_protect.c protect_scoreboard.c protect_rate.c
+apxs -i -a mod_protect.la
+```
+
+Or use the included Makefile: `make && make install`.
+
+```
 LoadModule protect_module modules/mod_protect.so
 ```
 
-## Directives
+## Overview
+
+| Directive | Limits | Counted per |
+|---|---|---|
+| `ProtectMaxConcurrentPerIP` | simultaneous requests | client IP, all virtual hosts together |
+| `ProtectMaxConcurrentPerVHost` | simultaneous requests | virtual host, all clients together |
+| `ProtectSiteCount` + `ProtectSiteInterval` | requests per time window | client IP and virtual host |
+| `ProtectURICount` + `ProtectURIInterval` | requests per time window | client IP, virtual host and URI |
+| `ProtectURIDynamicCount` + `ProtectURIDynamicInterval` | requests per time window, dynamic requests only | client IP, virtual host and URI |
+| `ProtectLog` | | additional log of rejected requests |
+
+All limit directives take a non-negative integer. `0` (the default) disables the limit.
+
+All directives are valid in server config and `<VirtualHost>` context only.
+
+**Inheritance:** limits are not inherited. A `<VirtualHost>` that sets none of the limit directives has no limits, even if they are set in the main server config. Set the limits in every virtual host that needs them. `ProtectLog` is inherited.
+
+## Concurrent limits
+
+Count requests that are being processed at this moment, taken from the Apache scoreboard (requests that are being read, written or waiting for a DNS lookup). Idle keep-alive connections are not counted. These are not TCP connection limits and not rate limits.
+
+A limit of `N` allows `N` simultaneous requests; the next one is rejected.
 
 ### ProtectMaxConcurrentPerIP
 
-```apache
+```
 ProtectMaxConcurrentPerIP number
 ```
 
-Limits the number of concurrently active HTTP requests from one client IP address.
-
-The limit applies across all virtual hosts.
+Maximum number of simultaneous requests from one client IP, counted across all virtual hosts.
 
 ### ProtectMaxConcurrentPerVHost
 
-```apache
+```
 ProtectMaxConcurrentPerVHost number
 ```
 
-Limits the number of concurrently active HTTP requests to the current virtual host.
+Maximum number of simultaneous requests handled by the virtual host, from all clients together.
 
-### ProtectURICount
+## Rate limits
 
-```apache
-ProtectURICount number
+Rate limits use fixed time windows. The window starts with the first request. Up to `Count` requests are allowed in the window and further requests are rejected until the window ends; then the next request starts a new window. Rejected requests are not counted.
+
+Each `Count` directive works only together with its `Interval` directive. If either is `0`, that limit is off.
+
+### ProtectSiteCount / ProtectSiteInterval
+
 ```
-
-Limits the number of requests from one client IP to one URI within the configured ProtectURIInterval.
-
-The URI is Apache's normalized request URI. The query string is not included.
-
-### ProtectURIInterval
-
-```apache
-ProtectURIInterval seconds
-```
-
-Sets the fixed time window used by ProtectURICount.
-
-### ProtectURIDynamicCount
-
-```apache
-ProtectURIDynamicCount number
-```
-
-Sets an additional request limit for dynamic requests to one URI.
-
-The limit is independent of ProtectURICount.
-
-Dynamic requests are identified by the Apache request handler rather than by the URI or file name.
-
-### ProtectURIDynamicInterval
-
-```apache
-ProtectURIDynamicInterval seconds
-```
-
-Sets the fixed time window used by ProtectURIDynamicCount.
-
-### ProtectSiteCount
-
-```apache
 ProtectSiteCount number
-```
-
-Limits the number of requests from one client IP to one virtual host within the configured ProtectSiteInterval.
-
-### ProtectSiteInterval
-
-```apache
 ProtectSiteInterval seconds
 ```
 
-Sets the fixed time window used by ProtectSiteCount.
+Maximum number of requests from one client IP to the virtual host, across all URIs, within `ProtectSiteInterval` seconds.
 
-## Request handling
+### ProtectURICount / ProtectURIInterval
 
-When a configured limit is exceeded, mod_protect rejects the request with HTTP status 429 Too Many Requests.
-
-Concurrent limits apply to active HTTP requests. They are not TCP connection limits and are not rate limits.
-
-Concurrent limits are evaluated using the Apache scoreboard.
-
-Rate limits use fixed time windows. The configured number of requests is allowed during the window; the next request is rejected.
-
-Concurrent and rate limits are independent and can be used together.
-
-## Error log
-
-When a concurrent request limit is exceeded, mod_protect writes a notice to the Apache error log. The message identifies the directive that caused the rejection and reports the current count and limit:
-
-```text
-mod_protect: ProtectMaxConcurrentPerIP exceeded: ip=192.0.2.10 vhost=www.example.com count_ip=21/10 count_vhost=5/20
+```
+ProtectURICount number
+ProtectURIInterval seconds
 ```
 
-When a request-rate limit is exceeded, the message identifies the directive and reports the current count and limit:
+Maximum number of requests from one client IP to one URI within `ProtectURIInterval` seconds. All requests are counted, static and dynamic.
 
-```text
+The query string is ignored: `/a?x=1` and `/a?x=2` are the same URI.
+
+### ProtectURIDynamicCount / ProtectURIDynamicInterval
+
+```
+ProtectURIDynamicCount number
+ProtectURIDynamicInterval seconds
+```
+
+Like `ProtectURICount`, but counts only dynamic requests. Use it to set a stricter limit for expensive URIs while keeping a looser one for everything else. A dynamic request is counted in both `ProtectURICount` and `ProtectURIDynamicCount`; each has its own counter and limit.
+
+A request is dynamic if its handler is one of `cgi-script`, `fcgid-script`, `proxy-server`, `application/x-httpd-php`, `application/x-httpd-php-source`, or starts with `proxy:` (for example PHP-FPM through `SetHandler "proxy:unix:..."`). The URI and file extension are not checked.
+
+## Logging
+
+### ProtectLog
+
+```
+ProtectLog /path/to/file
+```
+
+Appends every rejected request to the given file, in addition to the Apache error log. The file is created if it does not exist. Each line has the form:
+
+```
+[timestamp] [concurrent] ip=192.0.2.10 vhost=www.example.com count_ip=21/20 count_vhost=5/80 directive=ProtectMaxConcurrentPerIP uri=/index.php
+[timestamp] [rate] ip=192.0.2.10 vhost=www.example.com uri=/api/test count=101/100 directive=ProtectURICount
+```
+
+### Error log
+
+Rejections are also written to the Apache error log at `notice` level, so the default `LogLevel warn` hides them. Enable them with:
+
+```
+LogLevel protect:notice
+```
+
+Each message names the directive that caused the rejection and shows `current/limit`:
+
+```
+mod_protect: ProtectMaxConcurrentPerIP exceeded: ip=192.0.2.10 vhost=www.example.com count_ip=21/20 count_vhost=5/80
 mod_protect: ProtectURICount exceeded: ip=192.0.2.10 uri=/api/test count=101/100
 ```
 
-For concurrent limits, `count_ip` and `count_vhost` show the current count and configured limit. For rate limits, `count` shows the current count and configured limit. If both concurrent limits are exceeded, both directive names are reported. These messages are logged at notice level.
+If both concurrent limits are exceeded, both directive names are listed. For rate limits the current count is always the limit plus one.
 
-The log level can be changed using Apache's LogLevel directive, for example:
+`LogLevel protect:debug` additionally logs when the scoreboard is unavailable.
 
-```apache
-LogLevel protect:debug
+## Behavior
+
+- Limits are checked late in request processing (fixups phase), only for the initial request. Subrequests and internal redirects are not counted, and neither are requests already rejected earlier (for example by access control).
+- Concurrent limits are checked first, then rate limits in this order: site, URI, dynamic. The first exceeded limit rejects the request and is the one reported.
+- Fail open: if the scoreboard is unavailable, or a rate-limit table is full, the request is allowed.
+- Rate counters are kept in shared memory and are reset when Apache is restarted or reloaded.
+
+## Implementation notes
+
+Concurrent counts come from Apache's public scoreboard API. mod_protect keeps no counter of its own and does not query `/server-status`.
+
+Rate counters are shared between Apache processes through APR shared memory, protected by a process-shared mutex:
+
 ```
-
-## Rate limiting
-
-Rate counters are shared between Apache worker processes using APR shared memory and a process-shared mutex.
-
-The module uses:
-
-```text
 logs/protect-rates.shm
 logs/protect-rates.lock
 ```
 
-There are 16384 entries per rate-limit category.
-
-Rate-limit keys use FNV-1a 64-bit hashing with linear probing.
-
-If the rate-limit table is full, the module fails open.
-
-## Concurrent request accounting
-
-Concurrent request limits use the Apache scoreboard as the source of truth.
-
-The module uses Apache's public scoreboard API. It does not maintain a separate concurrent-request counter and does not poll /server-status.
-
-The Apache scoreboard is created and maintained by Apache.
+Each rate category (site, URI, dynamic URI) has 16384 entries. Keys are hashed with FNV-1a (64-bit) and stored with linear probing.
 
 ## Configuration example
 
-```apache
+```
 LoadModule status_module modules/mod_status.so
 LoadModule protect_module modules/mod_protect.so
 
 ExtendedStatus On
+LogLevel protect:notice
+ProtectLog /var/log/apache2/protect.log
 
-LogLevel protect:debug
+<VirtualHost *:443>
+    ServerName www.example.com
 
-ProtectURICount 100
-ProtectURIInterval 10
+    # max 10 simultaneous requests per IP, 20 per virtual host
+    ProtectMaxConcurrentPerIP 10
+    ProtectMaxConcurrentPerVHost 20
 
-ProtectURIDynamicCount 20
-ProtectURIDynamicInterval 5
+    # max 300 requests per IP to this vhost in 1 s
+    ProtectSiteCount 300
+    ProtectSiteInterval 1
 
-ProtectSiteCount 300
-ProtectSiteInterval 1
+    # max 100 requests per IP to one URI in 10 s
+    ProtectURICount 100
+    ProtectURIInterval 10
 
-ProtectMaxConcurrentPerIP 10
-ProtectMaxConcurrentPerVHost 20
+    # max 20 dynamic requests per IP to one URI in 5 s
+    ProtectURIDynamicCount 20
+    ProtectURIDynamicInterval 5
+</VirtualHost>
 ```
-
-## Build
-
-Build using apxs:
-
-```sh
-apxs -c -I. mod_protect.c protect_scoreboard.c protect_rate.c
-```
-
-Install:
-
-```sh
-apxs -i -a mod_protect.la
-```
-
-Or use the included Makefile:
-
-```sh
-make
-make install
-```
-
-## Files
-
-```text
-mod_protect.c
-protect_scoreboard.c
-protect_scoreboard.h
-protect_rate.c
-protect_rate.h
-Makefile
-```
-
-## Response
-
-Requests rejected by mod_protect receive HTTP status 429 Too Many Requests.
-
-The module does not generate a response body.
