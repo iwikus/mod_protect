@@ -74,6 +74,7 @@ static int protect_rate_hit(protect_rate_entry *table,
 {
     apr_uint32_t i;
     apr_uint32_t start = (apr_uint32_t)(hash % PROTECT_RATE_SLOTS);
+    apr_uint32_t expired = PROTECT_RATE_SLOTS;
     apr_time_t now = apr_time_now();
 
     for (i = 0; i < PROTECT_RATE_SLOTS; ++i) {
@@ -96,9 +97,22 @@ static int protect_rate_hit(protect_rate_entry *table,
             ++entry->count;
             return 0;
         }
+
+        if (expired == PROTECT_RATE_SLOTS &&
+            now - entry->window_start >= interval) {
+            expired = (start + i) % PROTECT_RATE_SLOTS;
+        }
     }
 
-    /* Table full: fail open rather than reject unrelated traffic. */
+    if (expired != PROTECT_RATE_SLOTS) {
+        protect_rate_entry *entry = &table[expired];
+        entry->hash = hash;
+        entry->window_start = now;
+        entry->count = 1;
+        return 0;
+    }
+
+    /* Table full with active entries: fail open rather than reject traffic. */
     return 0;
 }
 
