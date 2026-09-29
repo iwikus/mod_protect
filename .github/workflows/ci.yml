@@ -133,8 +133,8 @@ jobs:
           <VirtualHost 127.0.0.1:8080>
               ServerName protect-uri
               DocumentRoot /var/www/protect-test
-              ProtectURICount 2
-              ProtectURIInterval 1
+              ProtectRatePerIPURI 2
+               1
               <Directory /var/www/protect-test>
                   Require all granted
               </Directory>
@@ -143,8 +143,8 @@ jobs:
           <VirtualHost 127.0.0.1:8080>
               ServerName protect-dynamic
               DocumentRoot /var/www/protect-test
-              ProtectURIDynamicCount 2
-              ProtectURIDynamicInterval 1
+              ProtectRatePerIPDynamicURI 2
+               1
               ScriptAlias /cgi-bin/ /var/www/protect-test/cgi-bin/
               <Directory /var/www/protect-test/cgi-bin>
                   Options +ExecCGI
@@ -158,8 +158,8 @@ jobs:
           <VirtualHost 127.0.0.1:8080>
               ServerName protect-site
               DocumentRoot /var/www/protect-test
-              ProtectSiteCount 2
-              ProtectSiteInterval 1
+              ProtectRatePerIPVHost 2
+               1
               <Directory /var/www/protect-test>
                   Require all granted
               </Directory>
