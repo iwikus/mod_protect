@@ -23,12 +23,9 @@ typedef struct {
     int max_concurrent_ip_set;
     int max_concurrent_vhost_set;
     protect_rate_config rate;
-    int uri_count_set;
-    int uri_interval_set;
-    int uri_dynamic_count_set;
-    int uri_dynamic_interval_set;
-    int site_count_set;
-    int site_interval_set;
+    int rate_uri_set;
+    int rate_dynamic_uri_set;
+    int rate_vhost_set;
     const char *protect_log;
     apr_os_file_t protect_log_fd;
 } protect_config;
@@ -39,12 +36,6 @@ static void *protect_create_server_config(apr_pool_t *p, server_rec *s)
     (void)s;
     cfg->max_concurrent_ip = 0;
     cfg->max_concurrent_vhost = 0;
-    cfg->rate.uri_count = 0;
-    cfg->rate.uri_interval = 0;
-    cfg->rate.uri_dynamic_count = 0;
-    cfg->rate.uri_dynamic_interval = 0;
-    cfg->rate.site_count = 0;
-    cfg->rate.site_interval = 0;
     cfg->protect_log = NULL;
     cfg->protect_log_fd = (apr_os_file_t)-1;
     return cfg;
@@ -61,31 +52,28 @@ static void *protect_merge_server_config(apr_pool_t *p, void *basev, void *overv
     cfg->max_concurrent_vhost = over->max_concurrent_vhost_set ?
         over->max_concurrent_vhost : base->max_concurrent_vhost;
 
-    cfg->rate.uri_count = over->uri_count_set ?
-        over->rate.uri_count : base->rate.uri_count;
-    cfg->rate.uri_interval = over->uri_interval_set ?
-        over->rate.uri_interval : base->rate.uri_interval;
-    cfg->rate.uri_dynamic_count = over->uri_dynamic_count_set ?
-        over->rate.uri_dynamic_count : base->rate.uri_dynamic_count;
-    cfg->rate.uri_dynamic_interval = over->uri_dynamic_interval_set ?
-        over->rate.uri_dynamic_interval : base->rate.uri_dynamic_interval;
-    cfg->rate.site_count = over->site_count_set ?
-        over->rate.site_count : base->rate.site_count;
-    cfg->rate.site_interval = over->site_interval_set ?
-        over->rate.site_interval : base->rate.site_interval;
+    cfg->rate = over->rate;
+    if (!over->rate_uri_set) {
+        cfg->rate.uri_count = base->rate.uri_count;
+        cfg->rate.uri_interval = base->rate.uri_interval;
+    }
+    if (!over->rate_dynamic_uri_set) {
+        cfg->rate.uri_dynamic_count = base->rate.uri_dynamic_count;
+        cfg->rate.uri_dynamic_interval = base->rate.uri_dynamic_interval;
+    }
+    if (!over->rate_vhost_set) {
+        cfg->rate.site_count = base->rate.site_count;
+        cfg->rate.site_interval = base->rate.site_interval;
+    }
 
     cfg->max_concurrent_ip_set =
         over->max_concurrent_ip_set || base->max_concurrent_ip_set;
     cfg->max_concurrent_vhost_set =
         over->max_concurrent_vhost_set || base->max_concurrent_vhost_set;
-    cfg->uri_count_set = over->uri_count_set || base->uri_count_set;
-    cfg->uri_interval_set = over->uri_interval_set || base->uri_interval_set;
-    cfg->uri_dynamic_count_set =
-        over->uri_dynamic_count_set || base->uri_dynamic_count_set;
-    cfg->uri_dynamic_interval_set =
-        over->uri_dynamic_interval_set || base->uri_dynamic_interval_set;
-    cfg->site_count_set = over->site_count_set || base->site_count_set;
-    cfg->site_interval_set = over->site_interval_set || base->site_interval_set;
+    cfg->rate_uri_set = over->rate_uri_set || base->rate_uri_set;
+    cfg->rate_dynamic_uri_set =
+        over->rate_dynamic_uri_set || base->rate_dynamic_uri_set;
+    cfg->rate_vhost_set = over->rate_vhost_set || base->rate_vhost_set;
 
     cfg->protect_log = over->protect_log ?
         over->protect_log : base->protect_log;
@@ -123,43 +111,40 @@ static const char *protect_set_limit(cmd_parms *cmd, void *dummy,
 }
 
 static const char *protect_set_rate(cmd_parms *cmd, void *dummy,
-                                    const char *arg)
+                                    const char *arg1, const char *arg2)
 {
     protect_config *cfg = ap_get_module_config(cmd->server->module_config,
                                                &protect_module);
     char *end;
-    long value;
+    long count;
+    long interval;
 
     (void)dummy;
 
-    value = strtol(arg, &end, 10);
-    if (*arg == '\0' || *end != '\0' || value < 0) {
-        return "mod_protect: rate value must be a non-negative integer";
+    count = strtol(arg1, &end, 10);
+    if (*arg1 == '\0' || *end != '\0' || count < 0) {
+        return "mod_protect: request count must be a non-negative integer";
     }
 
-    if (!strcmp(cmd->cmd->name, "ProtectURICount")) {
-        cfg->rate.uri_count = value;
-        cfg->uri_count_set = 1;
+    interval = strtol(arg2, &end, 10);
+    if (*arg2 == '\0' || *end != '\0' || interval < 0) {
+        return "mod_protect: interval must be a non-negative integer";
     }
-    else if (!strcmp(cmd->cmd->name, "ProtectURIInterval")) {
-        cfg->rate.uri_interval = value;
-        cfg->uri_interval_set = 1;
+
+    if (!strcmp(cmd->cmd->name, "ProtectRatePerIPURI")) {
+        cfg->rate.uri_count = count;
+        cfg->rate.uri_interval = interval;
+        cfg->rate_uri_set = 1;
     }
-    else if (!strcmp(cmd->cmd->name, "ProtectURIDynamicCount")) {
-        cfg->rate.uri_dynamic_count = value;
-        cfg->uri_dynamic_count_set = 1;
+    else if (!strcmp(cmd->cmd->name, "ProtectRatePerIPDynamicURI")) {
+        cfg->rate.uri_dynamic_count = count;
+        cfg->rate.uri_dynamic_interval = interval;
+        cfg->rate_dynamic_uri_set = 1;
     }
-    else if (!strcmp(cmd->cmd->name, "ProtectURIDynamicInterval")) {
-        cfg->rate.uri_dynamic_interval = value;
-        cfg->uri_dynamic_interval_set = 1;
-    }
-    else if (!strcmp(cmd->cmd->name, "ProtectSiteCount")) {
-        cfg->rate.site_count = value;
-        cfg->site_count_set = 1;
-    }
-    else if (!strcmp(cmd->cmd->name, "ProtectSiteInterval")) {
-        cfg->rate.site_interval = value;
-        cfg->site_interval_set = 1;
+    else if (!strcmp(cmd->cmd->name, "ProtectRatePerIPVHost")) {
+        cfg->rate.site_count = count;
+        cfg->rate.site_interval = interval;
+        cfg->rate_vhost_set = 1;
     }
 
     return NULL;
@@ -274,8 +259,8 @@ static int protect_fixups(request_rec *r)
         }
     }
 
-    if (cfg->rate.uri_count || cfg->rate.uri_dynamic_count ||
-        cfg->rate.site_count) {
+    if (cfg->rate_uri_set || cfg->rate_dynamic_uri_set ||
+        cfg->rate_vhost_set) {
         rv = protect_rate_check(r, &cfg->rate, &rate_limited, &rate_reason, &rate_count, &rate_limit);
         if (rv == OK && rate_limited) {
             ap_log_rerror(APLOG_MARK, APLOG_NOTICE, 0, r, APLOGNO(10006)
@@ -361,24 +346,15 @@ static const command_rec protect_cmds[] = {
     AP_INIT_TAKE1("ProtectMaxConcurrentPerVHost", protect_set_limit, NULL,
                   RSRC_CONF,
                   "Maximum concurrent requests per virtual host"),
-    AP_INIT_TAKE1("ProtectURICount", protect_set_rate, NULL,
+    AP_INIT_TAKE2("ProtectRatePerIPURI", protect_set_rate, NULL,
                   RSRC_CONF,
-                  "Maximum requests per client IP to one URI per interval"),
-    AP_INIT_TAKE1("ProtectURIInterval", protect_set_rate, NULL,
+                  "Maximum requests per client IP to one URI and interval in seconds"),
+    AP_INIT_TAKE2("ProtectRatePerIPDynamicURI", protect_set_rate, NULL,
                   RSRC_CONF,
-                  "URI request-rate interval in seconds"),
-    AP_INIT_TAKE1("ProtectURIDynamicCount", protect_set_rate, NULL,
+                  "Maximum dynamic requests per client IP to one URI and interval in seconds"),
+    AP_INIT_TAKE2("ProtectRatePerIPVHost", protect_set_rate, NULL,
                   RSRC_CONF,
-                  "Maximum dynamic requests per client IP to one URI per interval"),
-    AP_INIT_TAKE1("ProtectURIDynamicInterval", protect_set_rate, NULL,
-                  RSRC_CONF,
-                  "Dynamic URI request-rate interval in seconds"),
-    AP_INIT_TAKE1("ProtectSiteCount", protect_set_rate, NULL,
-                  RSRC_CONF,
-                  "Maximum requests per client IP to one virtual host per interval"),
-    AP_INIT_TAKE1("ProtectSiteInterval", protect_set_rate, NULL,
-                  RSRC_CONF,
-                  "Site request-rate interval in seconds"),
+                  "Maximum requests per client IP to one virtual host and interval in seconds"),
     { NULL }
 };
 
@@ -397,29 +373,25 @@ static int protect_post_config(apr_pool_t *pconf, apr_pool_t *plog,
         ap_log_error(APLOG_MARK, APLOG_NOTICE, 0, s, APLOGNO(10009)
                      "mod_protect: ProtectMaxConcurrentPerIP=%s "
                      "ProtectMaxConcurrentPerVHost=%s "
-                     "ProtectURICount=%s "
-                     "ProtectURIInterval=%s "
-                     "ProtectURIDynamicCount=%s "
-                     "ProtectURIDynamicInterval=%s "
-                     "ProtectSiteCount=%s "
-                     "ProtectSiteInterval=%s",
-                     cfg->max_concurrent_ip ?
+                     "ProtectRatePerIPURI=%s "
+                     "ProtectRatePerIPDynamicURI=%s "
+                     "ProtectRatePerIPVHost=%s",
+                     cfg->max_concurrent_ip_set ?
                          apr_psprintf(pconf, "%ld", cfg->max_concurrent_ip) : "off",
-                     cfg->max_concurrent_vhost ?
+                     cfg->max_concurrent_vhost_set ?
                          apr_psprintf(pconf, "%ld", cfg->max_concurrent_vhost) : "off",
-                     cfg->rate.uri_count ?
-                         apr_psprintf(pconf, "%ld", cfg->rate.uri_count) : "off",
-                     cfg->rate.uri_interval ?
-                         apr_psprintf(pconf, "%ld", cfg->rate.uri_interval) : "off",
-                     cfg->rate.uri_dynamic_count ?
-                         apr_psprintf(pconf, "%ld", cfg->rate.uri_dynamic_count) : "off",
-                     cfg->rate.uri_dynamic_interval ?
-                         apr_psprintf(pconf, "%ld",
+                     cfg->rate_uri_set ?
+                         apr_psprintf(pconf, "%ld/%ld",
+                                      cfg->rate.uri_count,
+                                      cfg->rate.uri_interval) : "off",
+                     cfg->rate_dynamic_uri_set ?
+                         apr_psprintf(pconf, "%ld/%ld",
+                                      cfg->rate.uri_dynamic_count,
                                       cfg->rate.uri_dynamic_interval) : "off",
-                     cfg->rate.site_count ?
-                         apr_psprintf(pconf, "%ld", cfg->rate.site_count) : "off",
-                     cfg->rate.site_interval ?
-                         apr_psprintf(pconf, "%ld", cfg->rate.site_interval) : "off");
+                     cfg->rate_vhost_set ?
+                         apr_psprintf(pconf, "%ld/%ld",
+                                      cfg->rate.site_count,
+                                      cfg->rate.site_interval) : "off");
     }
 
     if ((cfg->max_concurrent_ip || cfg->max_concurrent_vhost) &&
