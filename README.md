@@ -27,9 +27,9 @@ LoadModule protect_module modules/mod_protect.so
 |---|---|---|
 | `ProtectMaxConcurrentPerIP` | simultaneous requests | client IP, all virtual hosts together |
 | `ProtectMaxConcurrentPerVHost` | simultaneous requests | virtual host, all clients together |
-| `ProtectSiteCount` + `ProtectSiteInterval` | requests per time window | client IP and virtual host |
-| `ProtectURICount` + `ProtectURIInterval` | requests per time window | client IP, virtual host and URI |
-| `ProtectURIDynamicCount` + `ProtectURIDynamicInterval` | requests per time window, dynamic requests only | client IP, virtual host and URI |
+| `ProtectRatePerIPVHost` | requests per time window | client IP and virtual host |
+| `ProtectRatePerIPURI` | requests per time window | client IP, virtual host and URI |
+| `ProtectRatePerIPDynamicURI` | requests per time window, dynamic requests only | client IP, virtual host and URI |
 | `ProtectLog` | | additional log of rejected requests |
 
 All limit directives take a non-negative integer. `0` (the default) disables the limit.
@@ -64,36 +64,33 @@ Maximum number of simultaneous requests handled by the virtual host, from all cl
 
 Rate limits use fixed time windows. The window starts with the first request. Up to `Count` requests are allowed in the window and further requests are rejected until the window ends; then the next request starts a new window. Rejected requests are not counted.
 
-Each `Count` directive works only together with its `Interval` directive. If either is `0`, that limit is off.
+Each rate directive takes two arguments: the maximum number of requests and the fixed window length in seconds. If the request count is `0`, that limit is off.
 
-### ProtectSiteCount / ProtectSiteInterval
-
-```
-ProtectSiteCount number
-ProtectSiteInterval seconds
-```
-
-Maximum number of requests from one client IP to the virtual host, across all URIs, within `ProtectSiteInterval` seconds.
-
-### ProtectURICount / ProtectURIInterval
+### ProtectRatePerIPVHost
 
 ```
-ProtectURICount number
-ProtectURIInterval seconds
+ProtectRatePerIPVHost number seconds
 ```
 
-Maximum number of requests from one client IP to one URI within `ProtectURIInterval` seconds. All requests are counted, static and dynamic.
+Maximum number of requests from one client IP to one virtual host, across all URIs, within the specified number of seconds.
+
+### ProtectRatePerIPURI
+
+```
+ProtectRatePerIPURI number seconds
+```
+
+Maximum number of requests from one client IP to one URI within the specified number of seconds. All requests are counted, static and dynamic.
 
 The query string is ignored: `/a?x=1` and `/a?x=2` are the same URI.
 
-### ProtectURIDynamicCount / ProtectURIDynamicInterval
+### ProtectRatePerIPDynamicURI
 
 ```
-ProtectURIDynamicCount number
-ProtectURIDynamicInterval seconds
+ProtectRatePerIPDynamicURI number seconds
 ```
 
-Like `ProtectURICount`, but counts only dynamic requests. Use it to set a stricter limit for expensive URIs while keeping a looser one for everything else. When the dynamic limit is configured, dynamic requests use `ProtectURIDynamicCount` instead of `ProtectURICount`; they do not consume the normal URI counter. If the dynamic limit is not configured, dynamic requests fall back to `ProtectURICount`.
+Like `ProtectRatePerIPURI`, but counts only dynamic requests. When configured, dynamic requests use this limit instead of `ProtectRatePerIPURI`; they do not consume the normal URI counter. If this limit is not configured, dynamic requests fall back to `ProtectRatePerIPURI`.
 
 A request is dynamic if its handler is one of `cgi-script`, `fcgid-script`, `proxy-server`, `application/x-httpd-php`, or starts with `proxy:` (for example PHP-FPM through `SetHandler "proxy:unix:..."`). The URI and file extension are not checked.
 
@@ -169,15 +166,12 @@ ProtectLog /var/log/apache2/protect.log
     ProtectMaxConcurrentPerVHost 20
 
     # max 300 requests per IP to this vhost in 1 s
-    ProtectSiteCount 300
-    ProtectSiteInterval 1
+    ProtectRatePerIPVHost 300 1
 
     # max 100 requests per IP to one URI in 10 s
-    ProtectURICount 100
-    ProtectURIInterval 10
+    ProtectRatePerIPURI 100 10
 
     # max 20 dynamic requests per IP to one URI in 5 s
-    ProtectURIDynamicCount 20
-    ProtectURIDynamicInterval 5
+    ProtectRatePerIPDynamicURI 20 5
 </VirtualHost>
 ```
